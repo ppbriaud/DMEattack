@@ -1,0 +1,943 @@
+
+//////////////////////////////////////////////////////////////
+///////////////////////////DME utils/////////////////////////
+////////////////////////////////////////////////////////////
+
+e := 32;
+ee := 2*e;
+d := 57;
+q := 2^e;
+Zq:=quo<Integers() | q-1>;
+Zq2 := quo<Integers() | q^2 - 1>;
+Ze:=quo<Integers() | e>;
+Zee := quo<Integers() | ee>;
+
+Z := Integers();
+K := GF(q);
+L<u> := ext<K|2>;
+modu := DefiningPolynomial(L,K);
+V,f:=VectorSpace(L,K);
+
+couples := KMatrixSpace(K,1,2);
+two_by_two := KMatrixSpace(K,2,2);
+two_by_one := KMatrixSpace(K,2,1);
+
+/*
+POLYNOMIAL RINGS           
+*/
+
+SimpleRing := PolynomialRing(L);
+dd := SimpleRing.1;
+
+
+FormalRingVars := ["x"*IntegerToString(i) : i in [1..5]] cat ["y"*IntegerToString(i) : i in [1..5]] cat ["z"*IntegerToString(i) : i in [1..5]] cat ["s","t"];
+FormalRing<[A]> := PolynomialRing(L,17,"grevlex");
+AssignNames(~FormalRing,FormalRingVars);
+
+XRingVars := [];
+for i in [1..4] do
+             Xblock := ["X" *"(" *IntegerToString(i)*","*IntegerToString(j)*")" : j in [0..ee-1]];
+             XRingVars := XRingVars cat Xblock;
+end for;
+XRing<[X]> := PolynomialRing(L,4*ee,"grevlex");
+XFormalRing<[Xsup]> := PolynomialRing(FormalRing,4*ee,"grevlex");
+AssignNames(~XRing,XRingVars);
+AssignNames(~XFormalRing,XRingVars);
+Xgens := [XRing.j : j in [1..Rank(XRing)]];
+
+xRingVars := [];
+for i in [1..4] do
+             xBlock := ["x" *"(" *IntegerToString(i)*","*IntegerToString(1)*","*IntegerToString(j)*")" : j in [0..e-1]] cat ["x" *"(" *IntegerToString(i)*","*IntegerToString(2)*","*IntegerToString(j)*")" : j in [0..e-1]];
+                         xRingVars := xRingVars cat xBlock;
+end for;
+xRing<[v]> := PolynomialRing(L,4*ee,"grevlex");
+AssignNames(~xRing,xRingVars);
+
+
+/*
+DUM FUNCTIONS AND MORPHISMS
+*/
+
+function rand2by2()
+    return Matrix(K,2,2,[Random(K) : i in [1..4]]);
+end function;
+
+
+function rand2by1()
+    return Matrix(K,2,1,[Random(K) : i in [1..2]]);
+end function;
+
+function pair_to_ind(i,j)
+        return (i-1)*ee + j+1;
+end function;
+
+function ind_to_pair(Indice);
+        i := ((Indice-1) div ee) + 1;
+        j := (Indice-1) mod ee;
+        return i,j;
+end function;
+
+function triple_to_ind(i,pos,j)
+        return (i-1)*ee + (pos-1)*e + j + 1;
+end function;
+
+function ind_to_triple(Indice);
+        i := Ceiling(Indice/ee);
+        aux := Indice - ee*(i-1);
+        pos := Ceiling(aux/e);
+        aux_bis := aux - e*(pos-1);
+        j := aux_bis - 1;
+        return i,pos,j;
+end function;
+
+
+ImagePhi := [];
+for l in [1..4*ee] do
+        i,j := ind_to_pair(l);
+        if j le e-1 then
+                ImagePhi cat:= [xRing.(triple_to_ind(i,1,j)) + (u^(2^j))*xRing.(triple_to_ind(i,2,j))];
+        else
+                ImagePhi cat:= [xRing.(triple_to_ind(i,1,j-e)) + (u^(2^j))*xRing.(triple_to_ind(i,2,j-e))];
+        end if;
+end for;
+phi :=hom<XRing-> xRing | ImagePhi>;
+
+
+ImagePsi := [];
+for l in [1..4*ee] do
+        i,pos,j := ind_to_triple(l);
+        assert triple_to_ind(i,pos,j) eq l;
+        if pos eq 2 then
+                ImagePsi cat:= [(XRing.(pair_to_ind(i,j)) - XRing.(pair_to_ind(i,j+e)))*(u^(2^j) - u^(q*2^j))^-1];
+        else
+                ImagePsi cat:= [((u^(q*2^j))*(XRing.(pair_to_ind(i,j))) - (u^(2^j))*(XRing.(pair_to_ind(i,j+e))))*((u^(q*2^j)) - (u^(2^j)))^-1];
+                end if;
+end for;
+psi :=hom<xRing-> XRing | ImagePsi>;
+
+Reds := &cat[[XRing.(pair_to_ind(i,((j+1) mod ee))) - (XRing.(pair_to_ind(i,(j mod ee))))^2 : i in [1..4]] : j in [0..ee-1]];
+FormalReds := &cat[[XFormalRing.(pair_to_ind(i,((j+1) mod ee))) - (XFormalRing.(pair_to_ind(i,(j mod ee))))^2 : i in [1..4]] : j in [0..ee-1]];
+
+function phi_poly(Q)
+        aux := phi(Q);
+        mons := Monomials(aux);
+        coefs := Coefficients(aux);
+        coefs_1 := [f(elt)[1] : elt in coefs];
+        coefs_2 := [f(elt)[2] : elt in coefs];
+        P1 := &+[coefs_1[j]*mons[j] : j in [1..#mons]];
+        P2 := &+[coefs_2[j]*mons[j] : j in [1..#mons]];
+        for elt in Coefficients(P1) cat Coefficients(P2) do
+                assert K!elt eq elt;
+        end for;
+        return [P1,P2];
+end function;
+
+
+function psi_poly(P1,P2)
+        return psi(P1 +u*P2);
+end function;
+
+function psi_state8(State8)
+        return [psi_poly(State8[2*(j-1) + 1],State8[2*j]) : j in [1..4]];
+end function;
+
+
+function phi_state4(State4)
+        return &cat[phi_poly(State4[j]) : j in [1..4]];
+end function;
+
+ImageRho:=[XFormalRing.l: l in [1..4*ee]];
+rho:=hom<XRing-> XFormalRing | ImageRho>;
+
+
+/*
+LINEAR LAYER
+*/
+
+function init_state8()
+        return &cat[[xRing.(triple_to_ind(i,1,0)),xRing.(triple_to_ind(i,2,0))] : i in [1..4]];
+end function;
+
+
+function gene_linear()
+        shifts := [];
+        linears := [];
+        for j in [1..4] do
+                mati := rand2by2();
+                rk := Rank(mati);
+                while rk le 1 do
+                        mati := rand2by2();
+                        rk := Rank(mati);
+                end while;
+                linears cat:= [mati];
+                shifts cat:=[rand2by1()];
+        end for;
+        return <linears,shifts>;
+end function;
+
+
+function apply_linear_2(mati,vect,P1,P2)
+        a0 := vect[1,1];
+        b0 := vect[2,1];
+        OutLeft := a0 + mati[1,1]*P1 + mati[1,2]*P2;
+        OutRight := b0 + mati[2,1]*P1 + mati[2,2]*P2;
+        return [OutLeft,OutRight];
+end function;
+
+
+function apply_linear(LinearLayer,State)
+        linears := LinearLayer[1];
+        shifts := LinearLayer[2];
+        resu := [];
+        for j in [1..4] do
+                mati := linears[j];
+                vect := shifts[j];
+                P1 := State[2*(j-1) + 1];
+                P2 := State[2*j];
+                comp_j := apply_linear_2(mati,vect,P1,P2);
+                resu := resu cat comp_j;
+        end for;
+        return resu;
+end function;
+
+/*
+EXPONENTIAL MAPS
+*/
+
+function E_pow(x,p)
+        if p eq Zero(Zee) then
+                return L!x;
+        else
+                return L!E_pow(x*x,p-1);
+        end if;
+end function;
+
+function binary_dec(Exponent)
+        if Exponent eq -1 then
+                return [];
+        end if;
+        if Exponent eq 0 then
+                return [0];
+        end if;
+        aux := Z!Exponent;
+        dec := Intseq(aux,2);
+        return [j-1 : j in [1..#dec] | dec[j] eq 1];
+end function;
+
+//2-POWERING
+function two_pow(aa)
+        image := [];
+        for l in [1..ee*4] do
+             i,j := ind_to_pair(l);
+             if j+aa le ee-1 then
+                image cat:= [XRing.(pair_to_ind(i,Z!(j+aa)))];
+             else
+                image cat:= [XRing.(pair_to_ind(i,j+aa-ee))];
+             end if;
+        end for;
+        return hom<XRing-> XRing| image>;
+end function;
+
+function two_pow_poly(Q,aa)
+        if Z!aa eq -1 then
+                return XRing!1;
+        end if;
+        g := two_pow(aa);
+        Coefs := Coefficients(Q);
+        Mons := Monomials(Q);
+        PoweredCoefs := [E_pow(elt,aa) : elt in Coefs];
+        PoweredMons := [NormalForm(g(elt),Reds) : elt in Mons];
+        return &+[PoweredCoefs[j]*PoweredMons[j] : j in [1..#Mons]];
+end function;
+
+
+function prod(Q1,Q2)
+        return NormalForm(Q1*Q2,Reds);
+end function;
+
+function apply_expo(mati,State)
+        OutputState := [];
+        for j in [1..4] do
+                LeftQ := prod(two_pow_poly(State[1],mati[j,1]),two_pow_poly(State[2],mati[j,2]));
+                RightQ := prod(two_pow_poly(State[3],mati[j,3]),two_pow_poly(State[4],mati[j,4]));
+                comp_j := prod(LeftQ,RightQ);
+                OutputState cat:= [comp_j];
+        end for;
+        return OutputState;
+end function;
+
+
+
+function gene_Ai()
+        f := ee;
+
+        vals:=[Zee!Random(1,ee-1): i in [1..20]];//no zeros for now;
+        vals:=[Zee ! vals[i]: i in [1..20]];
+        vals[14]:=(f+vals[1]-vals[2]+vals[7]-vals[9]+vals[13]);
+        vals[20]:=(f+vals[4]-vals[5]+vals[11]-vals[12]+vals[19]);
+        vals[17]:=(f+vals[15]-vals[16]+vals[18]+57);
+        vals:=[Zee ! vals[i]: i in [1..20]];
+
+        while &*vals eq Zero(Zee) do
+                vals:=[Zee!Random(1,ee-1): i in [1..20]];//no zeros for now;
+                vals:=[Zee ! vals[i]: i in [1..20]];
+                vals[14]:=(f+vals[1]-vals[2]+vals[7]-vals[9]+vals[13]);
+                vals[20]:=(f+vals[4]-vals[5]+vals[11]-vals[12]+vals[19]);
+                vals[17]:=(f+vals[15]-vals[16]+vals[18]+d);
+                vals:=[Zee ! vals[i]: i in [1..20]];
+        end while;
+
+        vals:=[Z ! vals[i]: i in [1..20]];
+
+        mati1:=Matrix([[vals[1],-1,-1,-1],[vals[2],vals[3],-1,-1],[-1,-1,vals[4],-1],[-1,-1,vals[5],vals[6]]]);
+        mati2:=Matrix([[vals[7],-1,-1,vals[8]],[-1,vals[9],-1,-1],[-1,vals[10],vals[11],-1],[-1,-1,-1,vals[12]]]);
+        mati3:=Matrix([[vals[13],vals[14],-1,-1],[-1,vals[15],-1,vals[16]],[-1,vals[17],-1,vals[18]],[-1,-1,vals[19],vals[20]]]);
+        mats := [mati1,mati2,mati3];
+        return <mati1,mati2,mati3,vals>;
+end function;
+
+
+/*
+KEYGEN
+*/           
+
+function keygen()
+        Mats := gene_Ai();
+        StateInit := init_state8();
+        L0C0 := gene_linear();
+        L0 := L0C0[1];
+        C0 := L0C0[2];
+        C0 := [two_by_one!0 : j in [1..8]];
+        L0C0 := <L0,C0>;
+        State0 := apply_linear(L0C0,StateInit);
+        BigFieldState0 := psi_state8(State0);
+        BigFieldState1_aux := apply_expo(Mats[1],BigFieldState0);
+        State1_aux := phi_state4(BigFieldState1_aux);
+        L1C1 := gene_linear();
+        State1 := apply_linear(L1C1,State1_aux);
+        BigFieldState1 := psi_state8(State1);
+        BigFieldState2_aux := apply_expo(Mats[2],BigFieldState1);
+        State2_aux := phi_state4(BigFieldState2_aux);
+        L2C2 := gene_linear();
+        State2 := apply_linear(L2C2,State2_aux);
+        BigFieldState2 := psi_state8(State2);
+        BigFieldState3_aux := apply_expo(Mats[3],BigFieldState2);
+        State3_aux := phi_state4(BigFieldState3_aux);
+        L3C3 := gene_linear();
+        State3 := apply_linear(L3C3,State3_aux);
+        BigFieldState3 := psi_state8(State3);
+        pk := State3;
+        sk := <[L0C0,L1C1,L2C2,L3C3],Mats>;
+        return pk,sk;
+
+end function;
+
+
+
+
+
+//////////////////////////////////////////////////////////////
+////////////////////Begin code for attack////////////////////
+////////////////////////////////////////////////////////////
+
+/////%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+/*
+Helper function to define the product in XFormalRing
+*/
+function remove_sq(Monomial)
+        resu := One(XFormalRing);
+        Elems := Factorization(Monomial);
+        for Coup in Elems do
+                Varia := Coup[1];
+                Expo := Coup[2];
+                if Expo eq 1 then
+                        resu := resu*XFormalRing!Varia;
+                end if;
+                if Expo eq 2 then
+                        Indice := Index(Xgens,Varia);
+                        i,j := ind_to_pair(Indice);
+                        assert i in [1..4];
+                        assert j in [0..ee-1];
+                        NewIndice := pair_to_ind(i,j+1 mod ee);
+                        resu := resu*(XFormalRing.NewIndice);
+                end if;
+        end for;
+        return resu;
+end function;
+
+/*
+Definition of product in XFormalRing
+*/
+function Formalprod(Q1,Q2)
+        Q1mons:=Monomials(Q1);
+        Q1coeffs:=Coefficients(Q1);
+        Q2mons:=Monomials(Q2);
+        Q2coeffs:=Coefficients(Q2);
+        result:=One(XFormalRing);
+        for i in [1..#Q1mons] do
+                for j in [1..#Q2mons] do
+                        result:=result+Q1coeffs[i]*Q2coeffs[j]*remove_sq(Q1mons[i]*Q2mons[j]);
+                end for;
+        end for;
+        return result;
+end function;
+
+/////%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function apply_linear_1_L(LC,P)
+		return LC[1]*P+LC[2]*two_pow_poly(P,e);
+end function;
+
+function inverse_linear_L(LC)//assumes that the linear map represented by LC is invertible.
+		divisor:=LC[1]*E_pow(LC[1],e)+LC[2]*E_pow(LC[2],e);
+		return [E_pow(LC[1],e)/divisor,LC[2]/divisor];
+end function;
+
+function apply_linear_L(LinearLayer,State)
+		return [apply_linear_1_L(LinearLayer[i],State[i]): i in [1..4]];
+end function;
+
+
+/////%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+/*
+"Nearly-commuting" trick
+*/
+
+function pass_expo_linear(mat,LC)
+                return [[E_pow(LC[i][1],mat[i][i]),E_pow(LC[i][2],mat[i][i])]: i in [1..4]];
+end function;
+
+function pass_expo_affine_shift(mat,D)
+                return [E_pow(D[i],mat[i][i]): i in [1..4]];
+end function;
+
+
+
+/////  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+/*
+Routines to find secret exponents
+*/
+
+
+/*
+Monomials divisible by a subset of variables
+*/
+function monomials_div_by(poly,ListVars)
+        Mons := Monomials(poly);
+        Mono := Monomials(poly);
+        for elt in ListVars do
+                resu := [];
+                for mon in Mons do
+                        found := false;
+                        j := 0;
+                        while j le ee-1 and not(found) do
+                                Indice := pair_to_ind(elt,j);
+                                if Degree(mon,Indice) ge 1 then
+                                        found := true;
+                                        resu := resu cat [mon];
+                                end if;
+                                j := j + 1;
+                        end while;
+                end for;
+                Mons := resu;
+        end for;
+        assert Seqset([1] cat Mons) subset Seqset(Mono);
+        return [1] cat Mons;
+end function;
+
+/*
+Same as monomials_div_by except that the support of the output is restricted to ListVars
+*/
+function extract_factor(poly,ListVars)
+		R:=Parent(poly);
+		Mons := Monomials(poly);
+		resu := [];
+		for mon in Mons do
+				found:=true;
+				newmon:=One(R);
+				i:=1;
+				while i le #ListVars and found do
+						found:=false;
+						elt:=ListVars[i];
+						j:=0;
+						while j le ee-1 and not(found) do
+								Index:=pair_to_ind(elt,j);
+								if Degree(mon,Index) ge 1 then
+										found:=true;
+										newmon:=newmon*R.Index^Degree(mon,Index);
+								end if;
+								j+:=1;
+						end while;
+						i+:=1;
+				end while;
+				if found then
+						resu:=resu cat [newmon];
+				end if;
+		end for;
+		return resu;
+end function;
+
+
+/*
+Finding the correct power relating two lists of monomials (aka L1^a = L2), -1 if failure
+*/
+function pair_monomials(PoweredList,TargetList)
+        for j in [0..ee-1] do
+                aux := Seqset(PoweredList);
+                AuxSet := {two_pow_poly(elt,j) : elt in aux};
+                TargetSet := Seqset(TargetList);
+                if TargetSet subset AuxSet then
+                        return j;
+                end if;
+        end for;
+        return -1;
+end function;
+
+/*
+Finding the monomials in a list of monomials of a certain degree
+*/
+function degree_monomials(mons,deg)
+		return [elt : elt in mons | Degree(elt) eq deg];
+end function;
+
+/*
+Finding the correct power relating two polynomials
+*/
+function pair_polynomials(poly1,poly2,ListVars);
+		if #ListVars eq 2 then
+				Mons1 := monomials_div_by(poly1,ListVars);
+				Mons2 := monomials_div_by(poly2,ListVars);
+				QuadMons1 := degree_monomials(Mons1,2);
+				QuadMons2 := degree_monomials(Mons2,2);
+				return pair_monomials(QuadMons1,QuadMons2);
+		else
+				Mons1:= extract_factor(poly1,ListVars);
+				Mons2:= extract_factor(poly2,ListVars);
+				return pair_monomials(Mons1,Mons2);
+		end if;
+end function;
+/*
+Finding monomial content of factor A in C=B*A, knowing the one of B and C
+*/
+function monomials_of_factor(MonomialsC,MonomialsB)
+        MonomialsA := [];
+        for elt in MonomialsC do
+                found := false;
+                for divi in MonomialsB do
+                        if divi ne 1 and elt/divi in XRing then
+                                MonomialsA cat:= [XRing!(elt div divi)];
+                                found := true;
+                        end if;
+                end for;
+        end for;
+        finale := Seqset(MonomialsA);
+        return Reverse(Sort(Setseq(finale)));
+end function;
+
+
+/*
+Function to perform key generation entirely over L with recovered secret key as input.  Output is mapped to K.
+*/
+function keygen_L_to_K(Mats,L,C)
+        StateInit := psi_state8(init_state8());
+        State0 := apply_linear_L(L[1],StateInit);
+        State1_aux := apply_expo(Mats[1],State0);
+        State1_aux := apply_linear_L(L[2],State1_aux);
+		State1:=[State1_aux[i]+C[1][i]: i in [1..4]];
+        State2_aux := apply_expo(Mats[2],State1);
+        State2_aux := apply_linear_L(L[3],State2_aux);
+		State2:=[State2_aux[i]+C[2][i]: i in [1..4]];
+        State3_aux := apply_expo(Mats[3],State2);
+        State3_aux := apply_linear_L(L[4],State3_aux);
+		State3:=[State3_aux[i]+C[3][i]: i in [1..4]];
+        pk := phi_state4(State3);
+        return pk;
+end function;
+
+
+/////////////////////////////////////////////////////////////////////////////
+///////////////////////Begin Recovery///////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+
+
+t:=Cputime();
+pk,sk := keygen();
+t:=Cputime(t);
+printf "Keygen completed in %oms.\n\n",1000*t;
+
+
+attack_time:=Cputime();
+// Lift public key to be defined over L
+t:=Cputime();
+pkL := psi_state8(pk);
+hatP1 := pkL[1];
+hatP2 := pkL[2];
+hatP3 := pkL[3];
+hatP4 := pkL[4];
+t:=Cputime(t);
+printf "Initial lifting: %oms.\n\n",1000*t;
+
+printf "Round 3...\n\n";
+// Recover differences corresponding to Bmatrix.
+t:=Cputime();
+j23 := pair_polynomials(hatP2,hatP3,[3,4]);
+j12 := pair_polynomials(hatP1,two_pow_poly(hatP2,j23),[1,2]);
+j34 := pair_polynomials(hatP4,hatP3,[3,4]);
+t:=Cputime(t);
+printf "Exponents in B: %oms.\n",1000*t;
+
+
+B3mat:=Matrix([[j12,-1,-1,-1],[-1,j23,-1,-1],[-1,-1,0,-1],[-1,-1,-1,j34]]);
+Cmat :=Matrix([[0,0,-1,-1],[-1,0,-1,0],[-1,57,-1,0],[-1,-1,0,0]]);
+B3matinv:=B3mat;
+for i in [1..4] do
+        B3matinv[i][i]:=(64-B3mat[i][i]) mod ee;
+end for;
+//Building recovered layer 3 exponential map
+BC3mat:=Matrix([[B3matinv[1][1],B3matinv[1][1],-1,-1],[-1,B3matinv[2][2],-1,B3matinv[2][2]],[-1,57,-1,0],[-1,-1,B3matinv[4][4],B3matinv[4][4]]]);
+
+// Augment state to make powers of factors match.
+hatP_t:=apply_expo(B3mat,pkL);
+// Raise to power of q to prepare to generate linear functions of new state
+hatP_tq:=[two_pow_poly(hatP_t[i],e): i in [1..4]];
+
+//Recover monomial sets of factors
+G4c5_mons:=degree_monomials(monomials_div_by(hatP_t[2],[3,4]),2) cat [One(XRing)];
+G2beta_mons:=monomials_of_factor(Monomials(hatP_t[2]),G4c5_mons);
+G1alpha_mons:=monomials_of_factor(Monomials(hatP_t[1]),G2beta_mons);
+G2c4_mons:=monomials_of_factor(Monomials(hatP_t[3]),G4c5_mons);
+G3gamma_mons:=monomials_of_factor(Monomials(hatP_t[4]),G4c5_mons);
+
+//Set up formal polynomial factors
+G1alpha_f:=&+[FormalRing.(i)*rho(G1alpha_mons[i]): i in [1..15]];
+G2beta_f:=&+[FormalRing.(i+5)*rho(G2beta_mons[i]): i in [1..5]];
+G2c4_f:=&+[FormalRing.(i+10)*rho(G2c4_mons[i]): i in [1..5]];
+G3gamma_f:=&+[FormalRing.(i)*rho(G3gamma_mons[i]): i in [1..15]];
+G4c5_f:=&+[FormalRing.(i)*rho(G4c5_mons[i]): i in [1..5]];
+
+//Set up formal linear functions of current state
+hatP_tL1_f:=FormalRing.16*rho(hatP_t[1])+FormalRing.17*rho(hatP_tq[1]);
+hatP_tL2_f:=rho(hatP_t[2])+FormalRing.16*rho(hatP_tq[2]);
+hatP_tL3_f:=rho(hatP_t[3])+FormalRing.17*rho(hatP_tq[3]);
+hatP_tL4_f:=FormalRing.16*rho(hatP_t[4])+FormalRing.17*rho(hatP_tq[4]);
+
+//Define formal products
+G2betaG4c5_f:=Formalprod(G2beta_f,G4c5_f);
+G2c4G4c5_f:=Formalprod(G2c4_f,G4c5_f);
+
+// Bilinear polynomial system to recover G2c4 and G4c5.  G2beta to be recovered uniquely based on the existence of the constant factor lambda from Lemma 4////
+EQS:=Coefficients(hatP_tL2_f-G2betaG4c5_f-MonomialCoefficient(hatP_tL2_f-G2betaG4c5_f,1)) cat Coefficients(hatP_tL3_f-G2c4G4c5_f-MonomialCoefficient(hatP_tL3_f-G2c4G4c5_f,1));
+
+t := Cputime();
+//SetVerbose("Faugere",0);
+I:=Ideal(EQS cat [FormalRing.1-1]);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Bilinear system: %oms.\n",1000*t;
+
+
+//Setting Values of G2c4 and G4c5.  Also setting temporary value for G2alpha
+G4c5:=&+[V[1][i]*G4c5_mons[i]: i in [1..5]];
+G2beta:=&+[V[1][i+5]*G2beta_mons[i]: i in [1..5]];
+G2c4:=&+[V[1][i+10]*G2c4_mons[i]: i in [1..5]];
+
+// Recovering G2beta///////
+G2c4_7:=two_pow_poly(G2c4,7);
+constfactor:=MonomialCoefficient(G2c4_7,1)/MonomialCoefficient(G2beta,1);
+G2beta:=constfactor*G2beta;
+
+// Setting coordinates 2 and 3 of pre Bmat last linear layer.  depends on factor related to Lemma 4
+LinearLayerRecovered3:=[[One(L),0],inverse_linear_L([constfactor,constfactor*V[1][16]]),inverse_linear_L([1,V[1][17]]),[1,0]];
+
+// Begin recovery of G1alpha
+G1alphaG2beta_f:=Formalprod(G1alpha_f,rho(G2beta));
+
+// Linear polynomial system to recover G1alpha.  Answer unique when a linear map constant is fixed
+t:=Cputime();
+EQS:=Coefficients(hatP_tL1_f-G1alphaG2beta_f-MonomialCoefficient(hatP_tL1_f-G1alphaG2beta_f,1)) cat [FormalRing.16-1];
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Linear system 1: %oms.\n",1000*t;
+
+//Setting coordinate 1 of the pre Bmat last linear layer.
+LinearLayerRecovered3[1]:=inverse_linear_L([V[1][16],V[1][17]]);
+
+//Setting value of G1alpha
+G1alpha:=&+[V[1][i]*G1alpha_mons[i]: i in [1..15]];
+
+// Begin recovery of G3gamma
+G3gammaG4c5_f:=Formalprod(G3gamma_f,rho(G4c5));
+
+// Linear polynomial system to recover G3gamma.  Again, answer unique up to fixed value of constant in linear map.
+t:=Cputime();
+EQS:=Coefficients(hatP_tL4_f-G3gammaG4c5_f-MonomialCoefficient(hatP_tL4_f-G3gammaG4c5_f,1)) cat [FormalRing.16-1];
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Linear system 2: %oms.\n\n",1000*t;
+
+// Setting coordinate 4 of the pre Bmat last linear layer.
+LinearLayerRecovered3[4]:=inverse_linear_L([V[1][16],V[1][17]]);
+
+//Setting value of G3gamma
+G3gamma:=&+[V[1][i]*G3gamma_mons[i]: i in [1..15]];
+
+// Recovering pre Bmat last affine shift layer
+State_aux:=[prod(G1alpha,G2beta),prod(G2beta,G4c5),prod(G2c4,G4c5),prod(G3gamma,G4c5)];
+State_out:=apply_linear_L(LinearLayerRecovered3,State_aux);
+AffineLayerRecovered3:= [hatP_t[i]-State_out[i]: i in [1..4]];
+
+// passing Bmat transformation by the affine shift and linear layers.
+real_linear3:=pass_expo_linear(B3matinv,LinearLayerRecovered3);
+real_affine3:=pass_expo_affine_shift(B3matinv,AffineLayerRecovered3);
+
+//////////////////////////////////////////////////////////////////
+//////////////////Round 3 Recovered!/////////////////////////////
+////////////////////////////////////////////////////////////////
+
+printf "Round 2...\n\n";
+
+//renaming components
+Gt1:=G1alpha;
+Gt2:=G2beta;
+Gt3:=G3gamma;
+Gt4:=G4c5;
+Gt:=[Gt1,Gt2,Gt3,Gt4];
+
+// Recover differences corresponding to Bmatrix.
+
+t:=Cputime();
+j14 := pair_polynomials(Gt1,Gt4,[3,4]);
+j32 := pair_polynomials(Gt3,Gt2,[1,2]);
+t:=Cputime(t);
+printf "Exponents in B: %oms.\n",1000*t;
+
+
+B2mat:=Matrix([[j14,-1,-1,-1],[-1,0,-1,-1],[-1,-1,j32,-1],[-1,-1,-1,0]]);
+C2mat :=Matrix([[0,-1,-1,0],[-1,0,-1,-1],[-1,0,0,-1],[-1,-1,-1,0]]);
+B2matinv:=B2mat;
+for i in [1..4] do
+        B2matinv[i][i]:=(64-B2mat[i][i]) mod ee;
+end for;
+//Building recovered layer 2 exponential map
+BC2mat:=Matrix([[B2matinv[1][1],-1,-1,B2matinv[1][1]],[-1,B2matinv[2][2],-1,-1],[-1,B2matinv[3][3],B2matinv[3][3],-1],[-1,-1,-1,B2matinv[4][4]]]);
+
+// Augment state to make powers of factors match.
+hatP2_t:=apply_expo(B2mat,Gt);
+// Raise to power of q to prepare to generate linear functions of new state
+hatP2_tq:=[two_pow_poly(hatP2_t[i],e): i in [1..4]];
+
+//Recover monomial sets of factors
+G4b5_mons:=Monomials(hatP2_t[4]);
+G1alpha_mons:=monomials_of_factor(Monomials(hatP2_t[1]),G4b5_mons);
+G2b2_mons:=Monomials(hatP2_t[2]);
+G3beta_mons:=monomials_of_factor(Monomials(hatP2_t[3]),G2b2_mons);
+
+//Set up formal polynomial factors
+G4b5_f:=&+[FormalRing.i*rho(G4b5_mons[i]): i in [1..5]];
+G1alpha_f:=&+[FormalRing.(i+5)*rho(G1alpha_mons[i]): i in [1..3]];
+
+//Set up formal linear functions of current state
+P2L1:=rho(hatP2_t[1])+FormalRing.16*rho(hatP2_tq[1]);
+P2L4:=rho(hatP2_t[4])+FormalRing.17*rho(hatP2_tq[4]);
+
+//Define formal products and generating bilinear system
+
+
+EQS:=Coefficients(P2L1-Formalprod(G1alpha_f,G4b5_f)-MonomialCoefficient(P2L1-Formalprod(G1alpha_f,G4b5_f),1));
+EQS:=EQS cat Coefficients(P2L4-G4b5_f-MonomialCoefficient(P2L4-G4b5_f,1)) cat [FormalRing.i: i in [9..15]];
+t:=Cputime();
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Bilinear system 1: %oms.\n",1000*t;
+
+//Setting values of recovered polynomials
+G1alpha:=&+[V[1][i+5]*G1alpha_mons[i]: i in [1..3]];
+G4b5:=&+[V[1][i]*G4b5_mons[i]: i in [1..5]];
+
+//Setting recovered linear layer values
+LinearLayerRecovered2:=[inverse_linear_L([One(L),V[1][16]]),[1,0],[1,0],inverse_linear_L([1,V[1][17]])];
+
+//Set up formal polynomial factors
+G2b2_f:=&+[FormalRing.i*rho(G2b2_mons[i]): i in [1..5]];
+G3beta_f:=&+[FormalRing.(i+5)*rho(G3beta_mons[i]): i in [1..3]];
+
+//Set up formal linear functions of current state
+P2L3:=rho(hatP2_t[3])+FormalRing.16*rho(hatP2_tq[3]);
+P2L2:=rho(hatP2_t[2])+FormalRing.17*rho(hatP2_tq[2]);
+
+//Define formal products and generating bilinear system
+
+EQS:=Coefficients(P2L3-Formalprod(G2b2_f,G3beta_f)-MonomialCoefficient(P2L3-Formalprod(G3beta_f,G2b2_f),1));
+EQS:=EQS cat Coefficients(P2L2-G2b2_f-MonomialCoefficient(P2L2-G2b2_f,1)) cat [FormalRing.i: i in [9..15]];
+t:=Cputime();
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Bilinear system 2: %oms.\n\n",1000*t;
+
+//Setting values of recovered polynomials
+G3beta:=&+[V[1][i+5]*G3beta_mons[i]: i in [1..3]];
+G2b2:=&+[V[1][i]*G2b2_mons[i]: i in [1..5]];
+
+//Setting recovered linear layer values
+LinearLayerRecovered2[2]:=inverse_linear_L([One(L),V[1][17]]);
+LinearLayerRecovered2[3]:=inverse_linear_L([One(L),V[1][16]]);
+
+// Recovering pre Bmat affine shift layer
+State_aux:=[prod(G1alpha,G4b5),G2b2,prod(G2b2,G3beta),G4b5];
+State_out:=apply_linear_L(LinearLayerRecovered2,State_aux);
+AffineLayerRecovered2:= [hatP2_t[i]-State_out[i]: i in [1..4]];
+
+// passing Bmat transformation by the affine shift and linear layers.
+real_linear2:=pass_expo_linear(B2matinv,LinearLayerRecovered2);
+real_affine2:=pass_expo_affine_shift(B2matinv,AffineLayerRecovered2);
+
+//////////////////////////////////////////////////////////////////
+//////////////////Round 2 Recovered!/////////////////////////////
+////////////////////////////////////////////////////////////////
+
+printf "Round 1...\n\n";
+
+Go1:=G1alpha;
+Go2:=G2b2;
+Go3:=G3beta;
+Go4:=G4b5;
+Go:=[Go1,Go2,Go3,Go4];
+
+
+// Recover differences corresponding to Bmatrix.
+t:=Cputime();
+j21 := pair_polynomials(Go2,Go1,[1]);
+adj_j11:=pair_polynomials(Go1,XRing.pair_to_ind(1,0)+XRing.pair_to_ind(1,e)+1,[1]);
+j43 := pair_polynomials(Go4,Go3,[3]);
+adj_j33:=pair_polynomials(Go3,XRing.pair_to_ind(3,0)+XRing.pair_to_ind(3,e)+1,[3]);
+t:=Cputime(t);
+printf "Exponents in B: %oms.\n",1000*t;
+
+B1mat:=Matrix([[adj_j11,-1,-1,-1],[-1,adj_j11+j21,-1,-1],[-1,-1,adj_j33,-1],[-1,-1,-1,adj_j33+j43]]);
+C1mat :=Matrix([[0,-1,-1,-1],[0,0,-1,-1],[-1,-1,0,-1],[-1,-1,0,0]]);
+B1matinv:=B1mat;
+for i in [1..4] do
+        B1matinv[i][i]:=(64-B1mat[i][i]) mod ee;
+end for;
+//Building recovered layer 1 exponential map (to be augmented at the end to allow linear input)
+BC1mat:=Matrix([[B1matinv[1][1],-1,-1,-1],[B1matinv[2][2],B1matinv[2][2],-1,-1],[-1,-1,B1matinv[3][3],-1],[-1,-1,B1matinv[4][4],B1matinv[4][4]]]);
+
+// Augment state to make powers of factors match.
+hatP3_t:=apply_expo(B1mat,Go);
+// Raise to power of q to prepare to generate linear functions of new state
+hatP3_tq:=[two_pow_poly(hatP3_t[i],e): i in [1..4]];
+
+//Recover monomial sets of factors
+G1a0_mons:=Monomials(hatP3_t[1]);
+G2alpha_mons:=monomials_of_factor(Monomials(hatP3_t[2]),G1a0_mons) cat [One(XRing)];
+G3a3_mons:=Monomials(hatP3_t[3]);
+G4beta_mons:=monomials_of_factor(Monomials(hatP3_t[4]),G3a3_mons) cat [One(XRing)];
+
+//Set up formal polynomial factors
+G1a0_f:=&+[FormalRing.i*rho(G1a0_mons[i]): i in [1..3]];
+G2alpha_f:=&+[FormalRing.(i+5)*rho(G2alpha_mons[i]): i in [1..3]];
+
+//Set up formal linear functions of current state
+P1L1:=rho(hatP3_t[1])+FormalRing.16*rho(hatP3_tq[1]);
+P1L2:=rho(hatP3_t[2])+FormalRing.17*rho(hatP3_tq[2]);
+
+
+//Define formal products and generating bilinear system
+EQS:=Coefficients(P1L2-Formalprod(G2alpha_f,G1a0_f)-MonomialCoefficient(P1L2-Formalprod(G2alpha_f,G1a0_f),1));
+EQS:=EQS cat Coefficients(P1L1-G1a0_f-MonomialCoefficient(P1L1-G1a0_f,1)) cat [FormalRing.i: i in [4..5] cat [9..15]];
+t:=Cputime();
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Bilinear system 1: %oms.\n",1000*t;
+
+//Setting values of recovered polynomials
+G2alpha:=&+[V[1][i+5]*G2alpha_mons[i]: i in [1..3]];
+G1a0:=&+[V[1][i]*G1a0_mons[i]: i in [1..3]];
+
+//Setting recovered linear layer values
+LinearLayerRecovered1:=[inverse_linear_L([One(L),V[1][16]]),inverse_linear_L([1,V[1][17]]),[1,0],[1,0]];
+
+//Set up formal linear functions of current state
+G3a3_f:=&+[FormalRing.i*rho(G3a3_mons[i]): i in [1..3]];
+G4beta_f:=&+[FormalRing.(i+5)*rho(G4beta_mons[i]): i in [1..3]];
+
+//Set up formal linear functions of current state
+P1L3:=rho(hatP3_t[3])+FormalRing.16*rho(hatP3_tq[3]);
+P1L4:=rho(hatP3_t[4])+FormalRing.17*rho(hatP3_tq[4]);
+
+
+//Define formal products and generating bilinear system
+EQS:=Coefficients(P1L4-Formalprod(G4beta_f,G3a3_f)-MonomialCoefficient(P1L4-Formalprod(G4beta_f,G3a3_f),1));
+EQS:=EQS cat Coefficients(P1L3-G3a3_f-MonomialCoefficient(P1L3-G3a3_f,1)) cat [FormalRing.i: i in [4..5] cat [9..15]];
+t:=Cputime();
+I:=Ideal(EQS);
+GB:=GroebnerBasis(I);
+V:=Variety(I);
+t:=Cputime(t);
+printf "Bilinear system 2: %oms.\n",1000*t;
+
+//Setting values of recovered polynomials
+G4beta:=&+[V[1][i+5]*G4beta_mons[i]: i in [1..3]];
+G3a3:=&+[V[1][i]*G3a3_mons[i]: i in [1..3]];
+
+//Setting recovered linear layer values
+LinearLayerRecovered1[3]:=inverse_linear_L([One(L),V[1][16]]);
+LinearLayerRecovered1[4]:=inverse_linear_L([One(L),V[1][17]]);
+
+// Recovering pre Bmat affine shift layer
+State_aux:=[G1a0,prod(G1a0,G2alpha),G3a3,prod(G3a3,G4beta)];
+State_out:=apply_linear_L(LinearLayerRecovered1,State_aux);
+AffineLayerRecovered1:= [hatP3_t[i]-State_out[i]: i in [1..4]];
+
+
+// passing Bmat transformation by the affine shift and linear layers.
+real_linear1:=pass_expo_linear(B1matinv,LinearLayerRecovered1);
+real_affine1:=pass_expo_affine_shift(B1matinv,AffineLayerRecovered1);
+
+//Calculating exponents to normalize and have input state in linear form.
+t := Cputime();
+adj_j22:=pair_polynomials(G2alpha,XRing.pair_to_ind(2,0)+XRing.pair_to_ind(2,e)+1,[2]);
+adj_j44:=pair_polynomials(G4beta,XRing.pair_to_ind(4,0)+XRing.pair_to_ind(4,e)+1,[4]);
+t:=Cputime(t);
+printf "Obtain input state in linear form: %oms.\n\n",1000*t;
+
+//Adjusting the initial round exponential layer to accommodate adjustments
+BC1mat:=Matrix([[B1matinv[1][1],-1,-1,-1],[B1matinv[2][2],(B1matinv[2][2]-adj_j22) mod ee,-1,-1],[-1,-1,B1matinv[3][3],-1],[-1,-1,B1matinv[4][4],(B1matinv[4][4]-adj_j44) mod ee]]);
+
+//////////////////////////////////////////////////////////////////
+//////////////////Round 1 Recovered!/////////////////////////////
+////////////////////////////////////////////////////////////////
+
+
+//renaming for convenience of recovering initial linear layer
+preState:=[G1a0,two_pow_poly(G2alpha,adj_j22),G3a3,two_pow_poly(G4beta,adj_j44)];
+
+//Setting initial linear layer
+real_linear0:=[[Coefficient(preState[i],pair_to_ind(i,0),1),Coefficient(preState[i],pair_to_ind(i,32),1)]: i in [1..4]];
+attack_time:=Cputime(attack_time);
+
+//////////////////////////////////////////////////////////////////
+//////////////////Round 0 Recovered!/////////////////////////////
+////////////////////////////////////////////////////////////////
+
+
+printf "Key recovery completed in %oms.\n",attack_time*1000;
+
+pk_recovered:=keygen_L_to_K([BC1mat,BC2mat,BC3mat],[real_linear0,real_linear1,real_linear2,real_linear3],[real_affine1,real_affine2,real_affine3]);
+
+//The moment of truth
+printf "Was key recovery successful? :%o\n",pk eq pk_recovered;
